@@ -191,23 +191,9 @@ impl AppState {
     }
 
     pub async fn update_sentry_scope(&self) {
-        let config = self.get_config().read().await;
-        let username = config.github.username.clone();
-        let email = config.github.primary_email.clone();
-        drop(config);
-
-        let sentry_user = if username.is_some() || email.is_some() {
-            sentry::User {
-                id: Some(self.user_id.clone()),
-                username,
-                email,
-                ..Default::default()
-            }
-        } else {
-            sentry::User {
-                id: Some(self.user_id.clone()),
-                ..Default::default()
-            }
+        let sentry_user = sentry::User {
+            id: Some(self.user_id.clone()),
+            ..Default::default()
         };
 
         sentry::configure_scope(|scope| {

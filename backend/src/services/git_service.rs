@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 use git2::{
     BranchType, DiffOptions, Error as GitError, RebaseOptions, Repository, WorktreeAddOptions,
 };
-use regex;
 use tracing::{debug, info};
 
 use crate::{
@@ -913,93 +912,7 @@ impl GitService {
         Ok(stored_worktree_path.to_path_buf())
     }
 
-    /// Extract GitHub owner and repo name from git repo path
-    pub fn get_github_repo_info(&self) -> Result<(String, String), GitServiceError> {
-        let repo = self.open_repo()?;
-        let remote = repo.find_remote("origin").map_err(|_| {
-            GitServiceError::InvalidRepository("No 'origin' remote found".to_string())
-        })?;
 
-        let url = remote.url().ok_or_else(|| {
-            GitServiceError::InvalidRepository("Remote origin has no URL".to_string())
-        })?;
-
-        // Parse GitHub URL (supports both HTTPS and SSH formats)
-        let github_regex = regex::Regex::new(r"github\.com[:/]([^/]+)/(.+?)(?:\.git)?/?$")
-            .map_err(|e| GitServiceError::InvalidRepository(format!("Regex error: {}", e)))?;
-
-        if let Some(captures) = github_regex.captures(url) {
-            let owner = captures.get(1).unwrap().as_str().to_string();
-            let repo_name = captures.get(2).unwrap().as_str().to_string();
-            Ok((owner, repo_name))
-        } else {
-            Err(GitServiceError::InvalidRepository(format!(
-                "Not a GitHub repository: {}",
-                url
-            )))
-        }
-    }
-
-    /// Push the branch to GitHub remote
-    pub fn push_to_github(
-        &self,
-        worktree_path: &Path,
-        branch_name: &str,
-        github_token: &str,
-    ) -> Result<(), GitServiceError> {
-        let repo = Repository::open(worktree_path)?;
-
-        // Get the remote
-        let remote = repo.find_remote("origin")?;
-        let remote_url = remote.url().ok_or_else(|| {
-            GitServiceError::InvalidRepository("Remote origin has no URL".to_string())
-        })?;
-
-        // Convert SSH URL to HTTPS URL if necessary
-        let https_url = if remote_url.starts_with("git@github.com:") {
-            // Convert git@github.com:owner/repo.git to https://github.com/owner/repo.git
-            remote_url.replace("git@github.com:", "https://github.com/")
-        } else if remote_url.starts_with("ssh://git@github.com/") {
-            // Convert ssh://git@github.com/owner/repo.git to https://github.com/owner/repo.git
-            remote_url.replace("ssh://git@github.com/", "https://github.com/")
-        } else {
-            remote_url.to_string()
-        };
-
-        // Create a temporary remote with HTTPS URL for pushing
-        let temp_remote_name = "temp_https_origin";
-
-        // Remove any existing temp remote
-        let _ = repo.remote_delete(temp_remote_name);
-
-        // Create temporary HTTPS remote
-        let mut temp_remote = repo.remote(temp_remote_name, &https_url)?;
-
-        // Create refspec for pushing the branch
-        let refspec = format!("refs/heads/{}:refs/heads/{}", branch_name, branch_name);
-
-        // Set up authentication callback using the GitHub token
-        let mut callbacks = git2::RemoteCallbacks::new();
-        callbacks.credentials(|_url, username_from_url, _allowed_types| {
-            git2::Cred::userpass_plaintext(username_from_url.unwrap_or("git"), github_token)
-        });
-
-        // Configure push options
-        let mut push_options = git2::PushOptions::new();
-        push_options.remote_callbacks(callbacks);
-
-        // Push the branch
-        let push_result = temp_remote.push(&[&refspec], Some(&mut push_options));
-
-        // Clean up the temporary remote
-        let _ = repo.remote_delete(temp_remote_name);
-
-        // Check push result
-        push_result?;
-
-        info!("Pushed branch {} to GitHub using HTTPS", branch_name);
-        Ok(())
-    }
 }
 
 #[cfg(test)]
