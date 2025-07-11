@@ -115,9 +115,6 @@ export function TaskDetailsToolbar({
   const [branchStatusLoading, setBranchStatusLoading] = useState(false);
   const [merging, setMerging] = useState(false);
   const [rebasing, setRebasing] = useState(false);
-  const [prBaseBranch, setPrBaseBranch] = useState(
-    selectedAttempt?.base_branch || 'main'
-  );
   const [error, setError] = useState<string | null>(null);
 
   const [devServerDetails, setDevServerDetails] =
@@ -1081,78 +1078,6 @@ export function TaskDetailsToolbar({
         )}
       </div>
 
-      {/* Create PR Dialog */}
-      <Dialog
-        open={showCreatePRDialog}
-        onOpenChange={() => handleCancelCreatePR()}
-      >
-        <DialogContent className="sm:max-w-[525px]">
-          <DialogHeader>
-            <DialogTitle>Create GitHub Pull Request</DialogTitle>
-            <DialogDescription>
-              Create a pull request for this task attempt on GitHub.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="pr-title">Title</Label>
-              <Input
-                id="pr-title"
-                value={prTitle}
-                onChange={(e) => setPrTitle(e.target.value)}
-                placeholder="Enter PR title"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="pr-body">Description (optional)</Label>
-              <Textarea
-                id="pr-body"
-                value={prBody}
-                onChange={(e) => setPrBody(e.target.value)}
-                placeholder="Enter PR description"
-                rows={4}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="pr-base">Base Branch</Label>
-              <Select value={prBaseBranch} onValueChange={setPrBaseBranch}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select base branch" />
-                </SelectTrigger>
-                <SelectContent>
-                  {branches
-                    .filter((branch) => !branch.is_remote) // Only show local branches
-                    .map((branch) => (
-                      <SelectItem key={branch.name} value={branch.name}>
-                        {branch.name}
-                        {branch.is_current && ' (current)'}
-                      </SelectItem>
-                    ))}
-                  {/* Add common branches as fallback if not in the list */}
-                  {!branches.some((b) => b.name === 'main' && !b.is_remote) && (
-                    <SelectItem value="main">main</SelectItem>
-                  )}
-                  {!branches.some(
-                    (b) => b.name === 'master' && !b.is_remote
-                  ) && <SelectItem value="master">master</SelectItem>}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={handleCancelCreatePR}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleConfirmCreatePR}
-              disabled={creatingPR || !prTitle.trim()}
-              className="bg-blue-600 hover:bg-blue-700"
-            >
-              {creatingPR ? 'Creating...' : 'Create PR'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </>
   );
 }
