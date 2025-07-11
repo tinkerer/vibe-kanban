@@ -33,7 +33,7 @@ function AppContent() {
         setShowOnboarding(!config.onboarding_acknowledged);
       }
     }
-  }, [config, githubTokenInvalid]);
+  }, [config]);
 
   const handleDisclaimerAccept = async () => {
     if (!config) return;
