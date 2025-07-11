@@ -6,7 +6,7 @@
       {
         "name": "attempt_id!: Uuid",
         "ordinal": 0,
-        "type_info": "Blob"
+        "type_info": "Text"
       },
       {
         "name": "worktree_path",
@@ -23,7 +23,7 @@
       "Right": 1
     },
     "nullable": [
-      true,
+      false,
       false,
       false
     ]

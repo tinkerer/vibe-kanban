@@ -6,14 +6,14 @@
       {
         "name": "id!: Uuid",
         "ordinal": 0,
-        "type_info": "Blob"
+        "type_info": "Text"
       }
     ],
     "parameters": {
       "Right": 3
     },
     "nullable": [
-      true
+      false
     ]
   },
   "hash": "b922df6b55164f75eec60a5ddf17a81598862a5f794d42ca89c67b4da1a25be5"

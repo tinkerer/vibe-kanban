@@ -12,12 +12,11 @@ use crate::{
     app_state::AppState,
     executor::{ExecutorConfig, NormalizedConversation, NormalizedEntry, NormalizedEntryType},
     models::{
-        config::Config,
         execution_process::{ExecutionProcess, ExecutionProcessStatus, ExecutionProcessSummary},
         executor_session::ExecutorSession,
         task::Task,
         task_attempt::{
-            BranchStatus, CreateFollowUpAttempt, CreatePrParams, CreateTaskAttempt, TaskAttempt,
+            BranchStatus, CreateFollowUpAttempt, CreateTaskAttempt, TaskAttempt,
             TaskAttemptState, TaskAttemptStatus, WorktreeDiff,
         },
         task_attempt_activity::{
@@ -32,12 +31,6 @@ pub struct RebaseTaskAttemptRequest {
     pub new_base_branch: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-pub struct CreateGitHubPRRequest {
-    pub title: String,
-    pub body: Option<String>,
-    pub base_branch: Option<String>,
-}
 
 #[derive(Debug, Serialize)]
 pub struct FollowUpResponse {
@@ -304,137 +297,6 @@ pub async fn merge_task_attempt(
         Err(e) => {
             tracing::error!("Failed to merge task attempt {}: {}", attempt_id, e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
-    }
-}
-
-pub async fn create_github_pr(
-    Path((project_id, task_id, attempt_id)): Path<(Uuid, Uuid, Uuid)>,
-    State(app_state): State<AppState>,
-    Json(request): Json<CreateGitHubPRRequest>,
-) -> Result<ResponseJson<ApiResponse<String>>, StatusCode> {
-    // Verify task attempt exists and belongs to the correct task
-    match TaskAttempt::exists_for_task(&app_state.db_pool, attempt_id, task_id, project_id).await {
-        Ok(false) => return Err(StatusCode::NOT_FOUND),
-        Err(e) => {
-            tracing::error!("Failed to check task attempt existence: {}", e);
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
-        }
-        Ok(true) => {}
-    }
-
-    // Load the user's GitHub configuration
-    let config = match Config::load(&crate::utils::config_path()) {
-        Ok(config) => config,
-        Err(e) => {
-            tracing::error!("Failed to load config: {}", e);
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
-        }
-    };
-
-    let github_token = match config.github.token {
-        Some(token) => token,
-        None => {
-            return Ok(ResponseJson(ApiResponse {
-                success: false,
-                data: None,
-                message: Some(
-                    "GitHub authentication not configured. Please sign in with GitHub.".to_string(),
-                ),
-            }));
-        }
-    };
-
-    // Get the task attempt to access the stored base branch
-    let attempt = match TaskAttempt::find_by_id(&app_state.db_pool, attempt_id).await {
-        Ok(Some(attempt)) => attempt,
-        Ok(None) => return Err(StatusCode::NOT_FOUND),
-        Err(e) => {
-            tracing::error!("Failed to fetch task attempt {}: {}", attempt_id, e);
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
-        }
-    };
-
-    let base_branch = request.base_branch.unwrap_or_else(|| {
-        // Use the stored base branch from the task attempt as the default
-        // Fall back to config default or "main" only if stored base branch is somehow invalid
-        if !attempt.base_branch.trim().is_empty() {
-            attempt.base_branch.clone()
-        } else {
-            config
-                .github
-                .default_pr_base
-                .unwrap_or_else(|| "main".to_string())
-        }
-    });
-
-    match TaskAttempt::create_github_pr(
-        &app_state.db_pool,
-        CreatePrParams {
-            attempt_id,
-            task_id,
-            project_id,
-            github_token: &config.github.pat.unwrap_or(github_token),
-            title: &request.title,
-            body: request.body.as_deref(),
-            base_branch: Some(&base_branch),
-        },
-    )
-    .await
-    {
-        Ok(pr_url) => {
-            app_state
-                .track_analytics_event(
-                    "github_pr_created",
-                    Some(serde_json::json!({
-                        "task_id": task_id.to_string(),
-                        "project_id": project_id.to_string(),
-                        "attempt_id": attempt_id.to_string(),
-                    })),
-                )
-                .await;
-
-            Ok(ResponseJson(ApiResponse {
-                success: true,
-                data: Some(pr_url),
-                message: Some("GitHub PR created successfully".to_string()),
-            }))
-        }
-        Err(e) => {
-            tracing::error!(
-                "Failed to create GitHub PR for attempt {}: {}",
-                attempt_id,
-                e
-            );
-            let message = match &e {
-                crate::models::task_attempt::TaskAttemptError::GitHubService(
-                    crate::services::GitHubServiceError::TokenInvalid,
-                ) => Some("github_token_invalid".to_string()),
-                crate::models::task_attempt::TaskAttemptError::GitService(
-                    crate::services::git_service::GitServiceError::Git(err),
-                ) if err
-                    .message()
-                    .contains("too many redirects or authentication replays") =>
-                {
-                    Some("insufficient_github_permissions".to_string()) // PAT is invalid
-                }
-                crate::models::task_attempt::TaskAttemptError::GitService(
-                    crate::services::git_service::GitServiceError::Git(err),
-                ) if err.message().contains("status code: 403") => {
-                    Some("insufficient_github_permissions".to_string())
-                }
-                crate::models::task_attempt::TaskAttemptError::GitService(
-                    crate::services::git_service::GitServiceError::Git(err),
-                ) if err.message().contains("status code: 404") => {
-                    Some("github_repo_not_found_or_no_access".to_string())
-                }
-                _ => Some(format!("Failed to create PR: {}", e)),
-            };
-            Ok(ResponseJson(ApiResponse {
-                success: false,
-                data: None,
-                message,
-            }))
         }
     }
 }
@@ -1377,10 +1239,6 @@ pub fn task_attempts_router() -> Router<AppState> {
         .route(
             "/projects/:project_id/tasks/:task_id/attempts/:attempt_id/delete-file",
             post(delete_task_attempt_file),
-        )
-        .route(
-            "/projects/:project_id/tasks/:task_id/attempts/:attempt_id/create-pr",
-            post(create_github_pr),
         )
         .route(
             "/projects/:project_id/tasks/:task_id/attempts/:attempt_id/execution-processes",

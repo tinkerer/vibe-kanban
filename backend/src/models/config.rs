@@ -16,7 +16,6 @@ pub struct Config {
     pub sound_file: SoundFile,
     pub push_notifications: bool,
     pub editor: EditorConfig,
-    pub github: GitHubConfig,
     pub analytics_enabled: Option<bool>,
 }
 
@@ -41,15 +40,6 @@ pub struct EditorConfig {
     pub custom_command: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
-pub struct GitHubConfig {
-    pub pat: Option<String>,
-    pub token: Option<String>,
-    pub username: Option<String>,
-    pub primary_email: Option<String>,
-    pub default_pr_base: Option<String>,
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
@@ -162,7 +152,6 @@ impl Default for Config {
             sound_file: SoundFile::AbstractSound4,
             push_notifications: true,
             editor: EditorConfig::default(),
-            github: GitHubConfig::default(),
             analytics_enabled: Some(true),
         }
     }
@@ -177,17 +166,6 @@ impl Default for EditorConfig {
     }
 }
 
-impl Default for GitHubConfig {
-    fn default() -> Self {
-        Self {
-            pat: None,
-            token: None,
-            username: None,
-            primary_email: None,
-            default_pr_base: Some("main".to_string()),
-        }
-    }
-}
 
 impl EditorConfig {
     pub fn get_command(&self) -> Vec<String> {

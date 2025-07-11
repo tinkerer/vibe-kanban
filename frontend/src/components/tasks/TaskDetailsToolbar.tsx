@@ -3,7 +3,6 @@ import {
   ArrowDown,
   ExternalLink,
   GitBranch as GitBranchIcon,
-  GitPullRequest,
   History,
   Play,
   Plus,
@@ -53,7 +52,6 @@ import type {
   GitBranch,
   TaskAttempt,
 } from 'shared/types';
-import { ProvidePatDialog } from '@/components/ProvidePatDialog';
 import { TaskDetailsContext } from '@/components/context/taskDetailsContext.ts';
 
 interface ApiResponse<T> {
@@ -117,16 +115,10 @@ export function TaskDetailsToolbar({
   const [branchStatusLoading, setBranchStatusLoading] = useState(false);
   const [merging, setMerging] = useState(false);
   const [rebasing, setRebasing] = useState(false);
-  const [creatingPR, setCreatingPR] = useState(false);
-  const [showCreatePRDialog, setShowCreatePRDialog] = useState(false);
-  const [prTitle, setPrTitle] = useState('');
-  const [prBody, setPrBody] = useState('');
   const [prBaseBranch, setPrBaseBranch] = useState(
     selectedAttempt?.base_branch || 'main'
   );
   const [error, setError] = useState<string | null>(null);
-  const [showPatDialog, setShowPatDialog] = useState(false);
-  const [patDialogError, setPatDialogError] = useState<string | null>(null);
 
   const [devServerDetails, setDevServerDetails] =
     useState<ExecutionProcess | null>(null);
@@ -510,93 +502,6 @@ export function TaskDetailsToolbar({
     }
   };
 
-  const handleCreatePRClick = async () => {
-    if (!projectId || !selectedAttempt?.id || !selectedAttempt?.task_id) return;
-
-    // If PR already exists, open it
-    if (selectedAttempt.pr_url) {
-      window.open(selectedAttempt.pr_url, '_blank');
-      return;
-    }
-
-    // Auto-fill with task details if available
-    setPrTitle(`${task.title} (vibe-kanban)`);
-    setPrBody(task.description || '');
-
-    setShowCreatePRDialog(true);
-  };
-
-  const handleConfirmCreatePR = async () => {
-    if (!projectId || !selectedAttempt?.id || !selectedAttempt?.task_id) return;
-
-    try {
-      setCreatingPR(true);
-      const response = await makeRequest(
-        `/api/projects/${projectId}/tasks/${selectedAttempt.task_id}/attempts/${selectedAttempt.id}/create-pr`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            title: prTitle,
-            body: prBody || null,
-            base_branch: prBaseBranch || null,
-          }),
-        }
-      );
-
-      if (response.ok) {
-        const result: ApiResponse<string> = await response.json();
-        if (result.success && result.data) {
-          // Open the PR URL in a new tab
-          window.open(result.data, '_blank');
-          setShowCreatePRDialog(false);
-          // Reset form
-          setPrTitle('');
-          setPrBody('');
-          setPrBaseBranch(selectedAttempt?.base_branch || 'main');
-        } else if (result.message === 'insufficient_github_permissions') {
-          setShowCreatePRDialog(false);
-          setPatDialogError(null);
-          setShowPatDialog(true);
-        } else if (result.message === 'github_repo_not_found_or_no_access') {
-          setShowCreatePRDialog(false);
-          setPatDialogError(
-            'Your token does not have access to this repository, or the repository does not exist. Please check the repository URL and/or provide a Personal Access Token with access.'
-          );
-          setShowPatDialog(true);
-        } else {
-          setError(result.message || 'Failed to create GitHub PR');
-        }
-      } else if (response.status === 403) {
-        setShowCreatePRDialog(false);
-        setPatDialogError(null);
-        setShowPatDialog(true);
-      } else if (response.status === 404) {
-        setShowCreatePRDialog(false);
-        setPatDialogError(
-          'Your token does not have access to this repository, or the repository does not exist. Please check the repository URL and/or provide a Personal Access Token with access.'
-        );
-        setShowPatDialog(true);
-      } else {
-        setError('Failed to create GitHub PR');
-      }
-    } catch (err) {
-      setError('Failed to create GitHub PR');
-    } finally {
-      setCreatingPR(false);
-    }
-  };
-
-  const handleCancelCreatePR = () => {
-    setShowCreatePRDialog(false);
-    // Reset form to empty state
-    setPrTitle('');
-    setPrBody('');
-    setPrBaseBranch('main');
-  };
-
   // Filter branches based on search term
   const filteredBranches = useMemo(() => {
     if (!branchSearchTerm.trim()) {
@@ -836,14 +741,6 @@ export function TaskDetailsToolbar({
 
   return (
     <>
-      <ProvidePatDialog
-        open={showPatDialog}
-        onOpenChange={(open) => {
-          setShowPatDialog(open);
-          if (!open) setPatDialogError(null);
-        }}
-        errorMessage={patDialogError || undefined}
-      />
       <div className="px-6 pb-4 border-b">
         {/* Error Display */}
         {error && (
@@ -1111,24 +1008,6 @@ export function TaskDetailsToolbar({
                               )}
                             {!branchStatus.merged && (
                               <>
-                                <Button
-                                  onClick={handleCreatePRClick}
-                                  disabled={
-                                    creatingPR ||
-                                    Boolean(branchStatus.is_behind) ||
-                                    isAttemptRunning
-                                  }
-                                  variant="outline"
-                                  size="sm"
-                                  className="border-blue-300 text-blue-700 hover:bg-blue-50 gap-1"
-                                >
-                                  <GitPullRequest className="h-3 w-3" />
-                                  {selectedAttempt.pr_url
-                                    ? 'Open PR'
-                                    : creatingPR
-                                      ? 'Creating...'
-                                      : 'Create PR'}
-                                </Button>
                                 <Button
                                   onClick={handleMergeClick}
                                   disabled={
