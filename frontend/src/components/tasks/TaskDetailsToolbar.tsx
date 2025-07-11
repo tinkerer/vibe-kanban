@@ -231,12 +231,6 @@ export function TaskDetailsToolbar({
     }
   }, [taskAttempts, branches, availableExecutors]);
 
-  // Update PR base branch when selected attempt changes
-  useEffect(() => {
-    if (selectedAttempt?.base_branch) {
-      setPrBaseBranch(selectedAttempt.base_branch);
-    }
-  }, [selectedAttempt?.base_branch]);
 
   const onCreateNewAttempt = async (executor?: string, baseBranch?: string) => {
     if (!task) return;
