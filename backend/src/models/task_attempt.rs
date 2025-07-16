@@ -10,8 +10,7 @@ use uuid::Uuid;
 
 use super::{project::Project, task::Task};
 use crate::services::{
-    CreatePrRequest, GitHubRepoInfo, GitHubService, GitHubServiceError, GitService,
-    GitServiceError, ProcessService,
+    GitService, GitServiceError, ProcessService,
 };
 
 // Constants for git diff operations
@@ -23,7 +22,6 @@ pub enum TaskAttemptError {
     Database(sqlx::Error),
     Git(GitError),
     GitService(GitServiceError),
-    GitHubService(GitHubServiceError),
     TaskNotFound,
     ProjectNotFound,
     ValidationError(String),
@@ -36,7 +34,6 @@ impl std::fmt::Display for TaskAttemptError {
             TaskAttemptError::Database(e) => write!(f, "Database error: {}", e),
             TaskAttemptError::Git(e) => write!(f, "Git error: {}", e),
             TaskAttemptError::GitService(e) => write!(f, "Git service error: {}", e),
-            TaskAttemptError::GitHubService(e) => write!(f, "GitHub service error: {}", e),
             TaskAttemptError::TaskNotFound => write!(f, "Task not found"),
             TaskAttemptError::ProjectNotFound => write!(f, "Project not found"),
             TaskAttemptError::ValidationError(e) => write!(f, "Validation error: {}", e),
@@ -65,11 +62,6 @@ impl From<GitServiceError> for TaskAttemptError {
     }
 }
 
-impl From<GitHubServiceError> for TaskAttemptError {
-    fn from(err: GitHubServiceError) -> Self {
-        TaskAttemptError::GitHubService(err)
-    }
-}
 
 #[derive(Debug, Clone, Type, Serialize, Deserialize, PartialEq, TS)]
 #[sqlx(type_name = "task_attempt_status", rename_all = "lowercase")]
@@ -94,10 +86,6 @@ pub struct TaskAttempt {
     pub base_branch: String, // Base branch this attempt is based on
     pub merge_commit: Option<String>,
     pub executor: Option<String>,  // Name of the executor to use
-    pub pr_url: Option<String>,    // GitHub PR URL
-    pub pr_number: Option<i64>,    // GitHub PR number
-    pub pr_status: Option<String>, // open, closed, merged
-    pub pr_merged_at: Option<DateTime<Utc>>, // When PR was merged
     pub worktree_deleted: bool,    // Flag indicating if worktree has been cleaned up
     pub setup_completed_at: Option<DateTime<Utc>>, // When setup script was last completed
     pub created_at: DateTime<Utc>,
@@ -117,16 +105,6 @@ pub struct UpdateTaskAttempt {
     // Currently no updateable fields, but keeping struct for API compatibility
 }
 
-/// GitHub PR creation parameters
-pub struct CreatePrParams<'a> {
-    pub attempt_id: Uuid,
-    pub task_id: Uuid,
-    pub project_id: Uuid,
-    pub github_token: &'a str,
-    pub title: &'a str,
-    pub body: Option<&'a str>,
-    pub base_branch: Option<&'a str>,
-}
 
 #[derive(Debug, Deserialize, TS)]
 #[ts(export)]
@@ -229,10 +207,6 @@ impl TaskAttempt {
                        ta.base_branch,
                        ta.merge_commit,
                        ta.executor,
-                       ta.pr_url,
-                       ta.pr_number,
-                       ta.pr_status,
-                       ta.pr_merged_at      AS "pr_merged_at: DateTime<Utc>",
                        ta.worktree_deleted  AS "worktree_deleted!: bool",
                        ta.setup_completed_at AS "setup_completed_at: DateTime<Utc>",
                        ta.created_at        AS "created_at!: DateTime<Utc>",
@@ -309,10 +283,6 @@ impl TaskAttempt {
                        merge_commit,
                        base_branch,
                        executor,
-                       pr_url,
-                       pr_number,
-                       pr_status,
-                       pr_merged_at      AS "pr_merged_at: DateTime<Utc>",
                        worktree_deleted  AS "worktree_deleted!: bool",
                        setup_completed_at AS "setup_completed_at: DateTime<Utc>",
                        created_at        AS "created_at!: DateTime<Utc>",
@@ -338,10 +308,6 @@ impl TaskAttempt {
                        base_branch,
                        merge_commit,
                        executor,
-                       pr_url,
-                       pr_number,
-                       pr_status,
-                       pr_merged_at      AS "pr_merged_at: DateTime<Utc>",
                        worktree_deleted  AS "worktree_deleted!: bool",
                        setup_completed_at AS "setup_completed_at: DateTime<Utc>",
                        created_at        AS "created_at!: DateTime<Utc>",
@@ -479,9 +445,9 @@ impl TaskAttempt {
         // Insert the record into the database
         Ok(sqlx::query_as!(
             TaskAttempt,
-            r#"INSERT INTO task_attempts (id, task_id, worktree_path, branch, base_branch, merge_commit, executor, pr_url, pr_number, pr_status, pr_merged_at, worktree_deleted, setup_completed_at)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-               RETURNING id as "id!: Uuid", task_id as "task_id!: Uuid", worktree_path, branch, base_branch, merge_commit, executor, pr_url, pr_number, pr_status, pr_merged_at as "pr_merged_at: DateTime<Utc>", worktree_deleted as "worktree_deleted!: bool", setup_completed_at as "setup_completed_at: DateTime<Utc>", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>""#,
+            r#"INSERT INTO task_attempts (id, task_id, worktree_path, branch, base_branch, merge_commit, executor, worktree_deleted, setup_completed_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+               RETURNING id as "id!: Uuid", task_id as "task_id!: Uuid", worktree_path, branch, base_branch, merge_commit, executor, worktree_deleted as "worktree_deleted!: bool", setup_completed_at as "setup_completed_at: DateTime<Utc>", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>""#,
             attempt_id,
             task_id,
             worktree_path_str,
@@ -489,10 +455,6 @@ impl TaskAttempt {
             resolved_base_branch,
             Option::<String>::None, // merge_commit is always None during creation
             data.executor,
-            Option::<String>::None, // pr_url is None during creation
-            Option::<i64>::None, // pr_number is None during creation
-            Option::<String>::None, // pr_status is None during creation
-            Option::<DateTime<Utc>>::None, // pr_merged_at is None during creation
             false, // worktree_deleted is false during creation
             Option::<DateTime<Utc>>::None // setup_completed_at is None during creation
         )
@@ -852,97 +814,8 @@ impl TaskAttempt {
         Ok(commit_id)
     }
 
-    /// Create a GitHub PR for this task attempt
-    pub async fn create_github_pr(
-        pool: &SqlitePool,
-        params: CreatePrParams<'_>,
-    ) -> Result<String, TaskAttemptError> {
-        // Load context with full validation
-        let ctx =
-            TaskAttempt::load_context(pool, params.attempt_id, params.task_id, params.project_id)
-                .await?;
 
-        // Ensure worktree exists (recreate if needed for cold task support)
-        let worktree_path =
-            Self::ensure_worktree_exists(pool, params.attempt_id, params.project_id, "GitHub PR")
-                .await?;
 
-        // Create GitHub service instance
-        let github_service = GitHubService::new(params.github_token)?;
-
-        // Use GitService to get the remote URL, then create GitHubRepoInfo
-        let git_service = GitService::new(&ctx.project.git_repo_path)?;
-        let (owner, repo_name) = git_service
-            .get_github_repo_info()
-            .map_err(|e| TaskAttemptError::ValidationError(e.to_string()))?;
-        let repo_info = GitHubRepoInfo { owner, repo_name };
-
-        // Push the branch to GitHub first
-        Self::push_branch_to_github(
-            &ctx.project.git_repo_path,
-            &worktree_path,
-            &ctx.task_attempt.branch,
-            params.github_token,
-        )?;
-
-        // Create the PR using GitHub service
-        let pr_request = CreatePrRequest {
-            title: params.title.to_string(),
-            body: params.body.map(|s| s.to_string()),
-            head_branch: ctx.task_attempt.branch.clone(),
-            base_branch: params.base_branch.unwrap_or("main").to_string(),
-        };
-
-        let pr_info = github_service.create_pr(&repo_info, &pr_request).await?;
-
-        // Update the task attempt with PR information
-        sqlx::query!(
-            "UPDATE task_attempts SET pr_url = $1, pr_number = $2, pr_status = $3, updated_at = datetime('now') WHERE id = $4",
-            pr_info.url,
-            pr_info.number,
-            pr_info.status,
-            params.attempt_id
-        )
-        .execute(pool)
-        .await?;
-
-        Ok(pr_info.url)
-    }
-
-    /// Push the branch to GitHub remote
-    fn push_branch_to_github(
-        git_repo_path: &str,
-        worktree_path: &str,
-        branch_name: &str,
-        github_token: &str,
-    ) -> Result<(), TaskAttemptError> {
-        // Use GitService to push to GitHub
-        let git_service = GitService::new(git_repo_path)?;
-        git_service
-            .push_to_github(Path::new(worktree_path), branch_name, github_token)
-            .map_err(TaskAttemptError::from)
-    }
-
-    /// Update PR status and merge commit
-    pub async fn update_pr_status(
-        pool: &SqlitePool,
-        attempt_id: Uuid,
-        status: &str,
-        merged_at: Option<DateTime<Utc>>,
-        merge_commit_sha: Option<&str>,
-    ) -> Result<(), sqlx::Error> {
-        sqlx::query!(
-            "UPDATE task_attempts SET pr_status = $1, pr_merged_at = $2, merge_commit = $3, updated_at = datetime('now') WHERE id = $4",
-            status,
-            merged_at,
-            merge_commit_sha,
-            attempt_id
-        )
-        .execute(pool)
-        .await?;
-
-        Ok(())
-    }
 
     /// Get the current execution state for a task attempt
     pub async fn get_execution_state(

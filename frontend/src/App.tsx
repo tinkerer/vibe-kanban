@@ -17,17 +17,12 @@ import type {
   ExecutorConfig,
   EditorType,
 } from 'shared/types';
-import * as Sentry from '@sentry/react';
-import { GitHubLoginDialog } from '@/components/GitHubLoginDialog';
-
-const SentryRoutes = Sentry.withSentryReactRouterV6Routing(Routes);
 
 function AppContent() {
-  const { config, updateConfig, loading, githubTokenInvalid } = useConfig();
+  const { config, updateConfig, loading } = useConfig();
   const [showDisclaimer, setShowDisclaimer] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showPrivacyOptIn, setShowPrivacyOptIn] = useState(false);
-  const [showGitHubLogin, setShowGitHubLogin] = useState(false);
   const showNavbar = true;
 
   useEffect(() => {
@@ -40,19 +35,8 @@ function AppContent() {
         }
       }
 
-      // Only show GitHub login if telemetry dialog is not being shown
-      if (config.telemetry_acknowledged) {
-        const notAuthenticated =
-          !config.github?.username || !config.github?.token;
-        setShowGitHubLogin(notAuthenticated || githubTokenInvalid);
-      } else {
-        setShowGitHubLogin(false);
-      }
     }
-    if (githubTokenInvalid) {
-      setShowGitHubLogin(true);
-    }
-  }, [config, githubTokenInvalid]);
+  }, [config]);
 
   const handleDisclaimerAccept = async () => {
     if (!config) return;
@@ -137,10 +121,6 @@ function AppContent() {
 
       if (data.success) {
         setShowPrivacyOptIn(false);
-        // Now show GitHub login after privacy choice is made
-        const notAuthenticated =
-          !updatedConfig.github?.username || !updatedConfig.github?.token;
-        setShowGitHubLogin(notAuthenticated);
       }
     } catch (err) {
       console.error('Error saving config:', err);
@@ -161,10 +141,6 @@ function AppContent() {
   return (
     <ThemeProvider initialTheme={config?.theme || 'system'}>
       <div className="h-screen flex flex-col bg-background">
-        <GitHubLoginDialog
-          open={showGitHubLogin}
-          onOpenChange={setShowGitHubLogin}
-        />
         <DisclaimerDialog
           open={showDisclaimer}
           onAccept={handleDisclaimerAccept}
@@ -179,7 +155,7 @@ function AppContent() {
         />
         {showNavbar && <Navbar />}
         <div className="flex-1 overflow-y-scroll">
-          <SentryRoutes>
+          <Routes>
             <Route path="/" element={<Projects />} />
             <Route path="/projects" element={<Projects />} />
             <Route path="/projects/:projectId" element={<Projects />} />
@@ -194,7 +170,7 @@ function AppContent() {
 
             <Route path="/settings" element={<Settings />} />
             <Route path="/mcp-servers" element={<McpServers />} />
-          </SentryRoutes>
+          </Routes>
         </div>
       </div>
     </ThemeProvider>

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 import {
   Card,
   CardContent,
@@ -18,7 +18,7 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
-import { Key, Loader2, Volume2 } from 'lucide-react';
+import { Loader2, Volume2 } from 'lucide-react';
 import type { EditorType, SoundFile, ThemeMode } from 'shared/types';
 import {
   EDITOR_LABELS,
@@ -30,16 +30,13 @@ import {
 } from 'shared/types';
 import { useTheme } from '@/components/theme-provider';
 import { useConfig } from '@/components/config-provider';
-import { GitHubLoginDialog } from '@/components/GitHubLoginDialog';
 
 export function Settings() {
-  const { config, updateConfig, saveConfig, loading, updateAndSaveConfig } =
-    useConfig();
+  const { config, updateConfig, saveConfig, loading } = useConfig();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const { setTheme } = useTheme();
-  const [showGitHubLogin, setShowGitHubLogin] = useState(false);
 
   const playSound = async (soundFile: SoundFile) => {
     const audio = new Audio(`/api/sounds/${soundFile}.wav`);
@@ -90,19 +87,6 @@ export function Settings() {
     updateConfig({ onboarding_acknowledged: false });
   };
 
-  const isAuthenticated = !!(config?.github?.username && config?.github?.token);
-
-  const handleLogout = useCallback(async () => {
-    if (!config) return;
-    updateAndSaveConfig({
-      github: {
-        ...config.github,
-        token: null,
-        username: null,
-        primary_email: null,
-      },
-    });
-  }, [config, updateAndSaveConfig]);
 
   if (loading) {
     return (
@@ -288,90 +272,6 @@ export function Settings() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Key className="h-5 w-5" />
-                GitHub Integration
-              </CardTitle>
-              <CardDescription>
-                Configure GitHub settings for creating pull requests from task
-                attempts.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="github-token">Personal Access Token</Label>
-                <Input
-                  id="github-token"
-                  type="password"
-                  placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-                  value={config.github.pat || ''}
-                  onChange={(e) =>
-                    updateConfig({
-                      github: {
-                        ...config.github,
-                        pat: e.target.value || null,
-                      },
-                    })
-                  }
-                />
-                <p className="text-sm text-muted-foreground">
-                  GitHub Personal Access Token with 'repo' permissions. Required
-                  for creating pull requests.{' '}
-                  <a
-                    href="https://github.com/settings/tokens"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-600 hover:underline"
-                  >
-                    Create token here
-                  </a>
-                </p>
-              </div>
-              {config && isAuthenticated ? (
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <Label>Signed in as</Label>
-                    <div className="text-lg font-mono">
-                      {config.github.username}
-                    </div>
-                  </div>
-                  <Button variant="outline" onClick={handleLogout}>
-                    Log out
-                  </Button>
-                </div>
-              ) : (
-                <Button onClick={() => setShowGitHubLogin(true)}>
-                  Sign in with GitHub
-                </Button>
-              )}
-              <GitHubLoginDialog
-                open={showGitHubLogin}
-                onOpenChange={setShowGitHubLogin}
-              />
-              <div className="space-y-2 pt-4">
-                <Label htmlFor="default-pr-base">Default PR Base Branch</Label>
-                <Input
-                  id="default-pr-base"
-                  placeholder="main"
-                  value={config.github.default_pr_base || ''}
-                  onChange={(e) =>
-                    updateConfig({
-                      github: {
-                        ...config.github,
-                        default_pr_base: e.target.value || null,
-                      },
-                    })
-                  }
-                />
-                <p className="text-sm text-muted-foreground">
-                  Default base branch for pull requests. Defaults to 'main' if
-                  not specified.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
 
           <Card>
             <CardHeader>

@@ -3,18 +3,16 @@ use std::{str::FromStr, sync::Arc};
 use axum::{
     body::Body,
     http::{header, HeaderValue, StatusCode},
-    middleware::from_fn_with_state,
     response::{IntoResponse, Json as ResponseJson, Response},
     routing::{get, post},
     Json, Router,
 };
-use sentry_tower::NewSentryLayer;
 use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
 use strip_ansi_escapes::strip;
 use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
 use tracing_subscriber::{filter::LevelFilter, prelude::*};
-use vibe_kanban::{sentry_layer, Assets, ScriptAssets, SoundAssets};
+use vibe_kanban::{Assets, ScriptAssets, SoundAssets};
 
 mod app_state;
 mod execution_monitor;
@@ -29,8 +27,7 @@ mod utils;
 use app_state::AppState;
 use execution_monitor::execution_monitor;
 use models::{ApiResponse, Config};
-use routes::{auth, config, filesystem, health, projects, task_attempts, tasks};
-use services::PrMonitorService;
+use routes::{config, filesystem, health, projects, task_attempts, tasks};
 
 async fn echo_handler(
     Json(payload): Json<serde_json::Value>,
@@ -120,20 +117,6 @@ async fn serve_sound_file(
 }
 
 fn main() -> anyhow::Result<()> {
-    let environment = if cfg!(debug_assertions) {
-        "dev"
-    } else {
-        "production"
-    };
-    let _guard = sentry::init(("https://1065a1d276a581316999a07d5dffee26@o4509603705192449.ingest.de.sentry.io/4509605576441937", sentry::ClientOptions {
-        release: sentry::release_name!(),
-        environment: Some(environment.into()),
-        attach_stacktrace: true,
-        ..Default::default()
-    }));
-    sentry::configure_scope(|scope| {
-        scope.set_tag("source", "server");
-    });
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -141,7 +124,6 @@ fn main() -> anyhow::Result<()> {
         .block_on(async {
             tracing_subscriber::registry()
                 .with(tracing_subscriber::fmt::layer().with_filter(LevelFilter::INFO))
-                .with(sentry_layer())
                 .init();
 
             // Create asset directory if it doesn't exist
@@ -167,23 +149,13 @@ fn main() -> anyhow::Result<()> {
             // Create app state
             let app_state = AppState::new(pool.clone(), config_arc.clone()).await;
 
-            app_state.update_sentry_scope().await;
 
-            // Track session start event
-            app_state.track_analytics_event("session_start", None).await;
             // Start background task to check for init status and spawn processes
             let state_clone = app_state.clone();
             tokio::spawn(async move {
                 execution_monitor(state_clone).await;
             });
 
-            // Start PR monitoring service
-            let pr_monitor = PrMonitorService::new(pool.clone());
-            let config_for_monitor = config_arc.clone();
-
-            tokio::spawn(async move {
-                pr_monitor.start_with_config(config_for_monitor).await;
-            });
 
             // Public routes (no auth required)
             let public_routes = Router::new()
@@ -200,9 +172,7 @@ fn main() -> anyhow::Result<()> {
                         .merge(task_attempts::task_attempts_router())
                         .merge(filesystem::filesystem_router())
                         .merge(config::config_router())
-                        .merge(auth::auth_router())
-                        .route("/sounds/:filename", get(serve_sound_file))
-                        .layer(from_fn_with_state(app_state.clone(), auth::sentry_user_context_middleware)),
+                        .route("/sounds/:filename", get(serve_sound_file)),
                 );
 
             let app = Router::new()
@@ -212,8 +182,7 @@ fn main() -> anyhow::Result<()> {
                 .route("/", get(index_handler))
                 .route("/*path", get(static_handler))
                 .with_state(app_state)
-                .layer(CorsLayer::permissive())
-                .layer(NewSentryLayer::new_from_top());
+                .layer(CorsLayer::permissive());
 
             let port = std::env::var("BACKEND_PORT")
                 .or_else(|_| std::env::var("PORT"))

@@ -220,9 +220,6 @@ impl From<crate::models::task_attempt::TaskAttemptError> for ExecutorError {
             crate::models::task_attempt::TaskAttemptError::GitService(e) => {
                 ExecutorError::GitError(format!("Git service error: {}", e))
             }
-            crate::models::task_attempt::TaskAttemptError::GitHubService(e) => {
-                ExecutorError::GitError(format!("GitHub service error: {}", e))
-            }
         }
     }
 }
